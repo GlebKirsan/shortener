@@ -5,6 +5,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"strconv"
 )
 
 type URL string
@@ -25,7 +26,7 @@ func generateString(l int) string {
 	return string(b)
 }
 
-func shortenUrl(w http.ResponseWriter, r *http.Request) {
+func shortenURL(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Only Post is allowed", http.StatusMethodNotAllowed)
 		return
@@ -46,16 +47,19 @@ func shortenUrl(w http.ResponseWriter, r *http.Request) {
 		reverseIndex[URL(body)] = newAddress
 	}
 
-	_, err = w.Write([]byte(serverAddress + newAddress))
+	data := []byte(serverAddress + newAddress)
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	w.WriteHeader(http.StatusCreated)
+	_, err = w.Write(data)
 	if err != nil {
 		http.Error(w, "Error during response writing", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "text/plain")
-	w.WriteHeader(http.StatusCreated)
 }
 
-func getUrl(w http.ResponseWriter, r *http.Request) {
+func getURL(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Only Get is allowed", http.StatusMethodNotAllowed)
 		return
@@ -80,8 +84,8 @@ func getUrl(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	serveMux := mux.NewRouter()
-	serveMux.HandleFunc("/", shortenUrl)
-	serveMux.HandleFunc("/{id}", getUrl)
+	serveMux.HandleFunc("/", shortenURL)
+	serveMux.HandleFunc("/{id}", getURL)
 	err := http.ListenAndServe(":8080", serveMux)
 	if err != nil {
 		panic(err)
