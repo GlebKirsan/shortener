@@ -32,15 +32,20 @@ func shortenURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if contentType := r.Header.Get("Content-Type"); contentType != "text/plain" {
+		http.Error(w, "Wrong content type: "+contentType, http.StatusUnsupportedMediaType)
+		return
+	}
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "Bad request body", http.StatusBadRequest)
+		http.Error(w, "Cannot read path body", http.StatusBadRequest)
 		return
 	}
 
 	var newAddress string
-	if storedAddress, ok := reverseIndex[URL(body)]; ok {
-		newAddress = storedAddress
+	if shortenedAddress, ok := reverseIndex[URL(body)]; ok {
+		newAddress = shortenedAddress
 	} else {
 		newAddress = generateString(8)
 		db[newAddress] = URL(body)
