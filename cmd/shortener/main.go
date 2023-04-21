@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/GlebKirsan/shortener/cmd/config"
@@ -84,5 +85,11 @@ func URLRouter() chi.Router {
 
 func main() {
 	flag.Parse()
+	if envRunAddr := os.Getenv("SERVER_ADDRESS"); envRunAddr != "" {
+		*config.ServerAddress = envRunAddr
+	}
+	if envPrefixAddr := os.Getenv("BASE_URL"); envPrefixAddr != "" {
+		config.ResponsePrefix = envPrefixAddr
+	}
 	log.Fatal(http.ListenAndServe(*config.ServerAddress, URLRouter()))
 }
