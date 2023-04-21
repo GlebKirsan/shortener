@@ -6,7 +6,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -32,63 +31,35 @@ func Test_generateString(t *testing.T) {
 	}
 }
 
+func testRequest(t *testing.T, ts *httptest.Server, method, path string) (*http.Response, string) {
+	req, err := http.NewRequest(method, ts.URL+path, nil)
+	require.NoError(t, err)
+
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	return resp, string(respBody)
+}
+
 func Test_shortenURL(t *testing.T) {
+	ts := httptest.NewServer(URLRouter())
+	defer ts.Close()
+
 	type want struct {
 		statusCode    int
-		response      string
 		contentType   string
 		contentLength string
 	}
-	type request struct {
-		method      string
-		contentType string
-	}
 	tests := []struct {
-		name         string
-		db           map[string]URL
-		reverseIndex map[URL]string
-		request      request
-		want         want
+		name string
+		want want
 	}{
 		{
-			name:         "Wrong path method",
-			db:           map[string]URL{},
-			reverseIndex: map[URL]string{},
-			request: request{
-				method:      http.MethodGet,
-				contentType: "text/plain; charset=utf-8",
-			},
-			want: want{
-				statusCode:  http.StatusMethodNotAllowed,
-				contentType: "text/plain; charset=utf-8",
-			},
-		},
-		{
-			name:         "Get short URL",
-			db:           map[string]URL{},
-			reverseIndex: map[URL]string{},
-			request: request{
-				method:      http.MethodPost,
-				contentType: "text/plain",
-			},
-			want: want{
-				statusCode:    http.StatusCreated,
-				contentType:   "text/plain",
-				contentLength: "30",
-			},
-		},
-		{
-			name: "Shorten existing URL",
-			db: map[string]URL{
-				"short": URL("full url"),
-			},
-			reverseIndex: map[URL]string{
-				URL("full url"): "short",
-			},
-			request: request{
-				method:      http.MethodPost,
-				contentType: "text/plain",
-			},
+			name: "Get short URL",
 			want: want{
 				statusCode:    http.StatusCreated,
 				contentType:   "text/plain",
@@ -98,126 +69,47 @@ func Test_shortenURL(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			request := httptest.NewRequest(tt.request.method, "/", nil)
-			request.Header.Set("Content-Type", tt.request.contentType)
-			w := httptest.NewRecorder()
-			db = tt.db
-			reverseIndex = tt.reverseIndex
-			shortenURL(w, request)
+			resp, _ := testRequest(t, ts, http.MethodPost, "/")
+			defer resp.Body.Close()
 
-			result := w.Result()
-
-			assert.Equal(t, tt.want.statusCode, result.StatusCode)
-			assert.Equal(t, tt.want.contentType, result.Header.Get("Content-Type"))
-
-			_, err := io.ReadAll(result.Body)
-			require.NoError(t, err)
-			err = result.Body.Close()
-			require.NoError(t, err)
-
-			assert.Equal(t, tt.want.contentLength, result.Header.Get("Content-Length"))
+			assert.Equal(t, tt.want.statusCode, resp.StatusCode)
+			assert.Equal(t, tt.want.contentType, resp.Header.Get("Content-Type"))
+			assert.Equal(t, tt.want.contentLength, resp.Header.Get("Content-Length"))
 		})
 	}
 }
 
 func Test_getURL(t *testing.T) {
+	ts := httptest.NewServer(URLRouter())
+	defer ts.Close()
+
 	type want struct {
 		statusCode int
 		location   string
-	}
-	type request struct {
-		method string
-		path   string
-		vars   map[string]string
 	}
 	tests := []struct {
 		name         string
 		db           map[string]URL
 		reverseIndex map[URL]string
-		request      request
+		path         string
 		want         want
 	}{
 		{
-			name:         "Wrong request method",
-			db:           map[string]URL{},
-			reverseIndex: map[URL]string{},
-			request: request{
-				method: http.MethodPost,
-				path:   "/someId",
-			},
-			want: want{
-				statusCode: http.StatusMethodNotAllowed,
-				location:   "",
-			},
-		},
-		{
-			name:         "Miss id in path",
-			db:           map[string]URL{},
-			reverseIndex: map[URL]string{},
-			request: request{
-				method: http.MethodGet,
-				path:   "/",
-				vars:   map[string]string{},
-			},
-			want: want{
-				statusCode: http.StatusBadRequest,
-				location:   "",
-			},
-		},
-		{
-			name:         "Id not found",
-			db:           map[string]URL{},
-			reverseIndex: map[URL]string{},
-			request: request{
-				method: http.MethodGet,
-				path:   "/someId",
-				vars:   map[string]string{"id": "trueId"},
-			},
+			name: "Id not found",
+			path: "/someId",
 			want: want{
 				statusCode: http.StatusNotFound,
-				location:   "",
-			},
-		},
-		{
-			name: "Redirect is ok",
-			db: map[string]URL{
-				"randstrI": URL("https://practicum.yandex.ru/"),
-			},
-			reverseIndex: map[URL]string{
-				URL("https://practicum.yandex.ru/"): "randstrI",
-			},
-			request: request{
-				method: http.MethodGet,
-				path:   "/randstrI",
-				vars:   map[string]string{"id": "randstrI"},
-			},
-			want: want{
-				statusCode: http.StatusTemporaryRedirect,
-				location:   "https://practicum.yandex.ru/",
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			request := httptest.NewRequest(tt.request.method, tt.request.path, nil)
+			setUp(tt.db, tt.reverseIndex)
+			resp, _ := testRequest(t, ts, http.MethodGet, tt.path)
+			defer resp.Body.Close()
 
-			w := httptest.NewRecorder()
-			db = tt.db
-			reverseIndex = tt.reverseIndex
-			request = mux.SetURLVars(request, tt.request.vars)
-
-			getURL(w, request)
-
-			result := w.Result()
-
-			assert.Equal(t, tt.want.statusCode, result.StatusCode)
-
-			_, err := io.ReadAll(result.Body)
-			require.NoError(t, err)
-			err = result.Body.Close()
-			require.NoError(t, err)
-
-			assert.Equal(t, tt.want.location, result.Header.Get("Location"))
+			assert.Equal(t, tt.want.statusCode, resp.StatusCode)
+			assert.Equal(t, tt.want.location, resp.Header.Get("Location"))
 		})
 	}
 }

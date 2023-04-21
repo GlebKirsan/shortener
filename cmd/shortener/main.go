@@ -1,11 +1,13 @@
 package main
 
 import (
-	"github.com/gorilla/mux"
 	"io"
+	"log"
 	"math/rand"
 	"net/http"
 	"strconv"
+
+	"github.com/go-chi/chi/v5"
 )
 
 type URL string
@@ -18,6 +20,11 @@ const (
 var db = map[string]URL{}
 var reverseIndex = map[URL]string{}
 
+func setUp(newDB map[string]URL, newReverseIndex map[URL]string) {
+	db = newDB
+	reverseIndex = newReverseIndex
+}
+
 func generateString(l int) string {
 	b := make([]byte, l)
 	for i := range b {
@@ -27,11 +34,6 @@ func generateString(l int) string {
 }
 
 func shortenURL(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Only Post is allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Cannot read path body", http.StatusBadRequest)
@@ -60,18 +62,7 @@ func shortenURL(w http.ResponseWriter, r *http.Request) {
 }
 
 func getURL(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Only Get is allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	vars := mux.Vars(r)
-	id, ok := vars["id"]
-	if !ok {
-		http.Error(w, "Missing shorthand path parameter", http.StatusBadRequest)
-		return
-	}
-
+	id := chi.URLParam(r, "id")
 	url, ok := db[id]
 	if !ok {
 		http.Error(w, "Non-existing url-shorthand", http.StatusNotFound)
@@ -82,12 +73,13 @@ func getURL(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusTemporaryRedirect)
 }
 
+func URLRouter() chi.Router {
+	r := chi.NewRouter()
+	r.Post("/", shortenURL)
+	r.Get("/{id}", getURL)
+	return r
+}
+
 func main() {
-	serveMux := mux.NewRouter()
-	serveMux.HandleFunc("/", shortenURL)
-	serveMux.HandleFunc("/{id}", getURL)
-	err := http.ListenAndServe(":8080", serveMux)
-	if err != nil {
-		panic(err)
-	}
+	log.Fatal(http.ListenAndServe(":8080", URLRouter()))
 }
