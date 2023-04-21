@@ -1,11 +1,14 @@
 package main
 
 import (
+	"flag"
 	"io"
 	"log"
 	"math/rand"
 	"net/http"
 	"strconv"
+
+	"github.com/GlebKirsan/shortener/cmd/config"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -13,8 +16,7 @@ import (
 type URL string
 
 const (
-	serverAddress = "http://localhost:8080/"
-	letters       = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 )
 
 var db = map[string]URL{}
@@ -49,7 +51,7 @@ func shortenURL(w http.ResponseWriter, r *http.Request) {
 		reverseIndex[URL(body)] = newAddress
 	}
 
-	data := []byte(serverAddress + newAddress)
+	data := []byte(config.ResponsePrefix + "/" + newAddress)
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
@@ -81,5 +83,6 @@ func URLRouter() chi.Router {
 }
 
 func main() {
-	log.Fatal(http.ListenAndServe(":8080", URLRouter()))
+	flag.Parse()
+	log.Fatal(http.ListenAndServe(*config.ServerAddress, URLRouter()))
 }
